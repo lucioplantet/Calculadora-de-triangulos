@@ -13,7 +13,7 @@ function NavTabs() {
   const [location] = useLocation();
   const tabs = [
     { href: "/", label: "Calculadora", icon: Triangle },
-    { href: "/quiz", label: "Preguntas", icon: HelpCircle },
+    { href: "/quiz", label: "Ejercicios", icon: HelpCircle },
   ];
 
   return (

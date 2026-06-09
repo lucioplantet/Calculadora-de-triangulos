@@ -1,412 +1,559 @@
-import { useState } from "react";
-import { CheckCircle, XCircle, RotateCcw, ChevronRight, Trophy, BookOpen } from "lucide-react";
+import { useState, useCallback, useRef } from "react";
+import { RefreshCw, CheckCircle2, XCircle, ChevronRight, Trophy, Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-interface Question {
-  id: number;
-  question: string;
-  options: string[];
-  correct: number;
-  explanation: string;
-  category: string;
+// ─── Math helpers ────────────────────────────────────────────────────────────
+
+const DEG = Math.PI / 180;
+const RAD = 180 / Math.PI;
+
+function toDeg(r: number) { return r * RAD; }
+function toRad(d: number) { return d * DEG; }
+
+function lawOfCosines_side(a: number, b: number, C_deg: number) {
+  return Math.sqrt(a * a + b * b - 2 * a * b * Math.cos(toRad(C_deg)));
+}
+function lawOfCosines_angle(a: number, b: number, c: number) {
+  return toDeg(Math.acos((b * b + c * c - a * a) / (2 * b * c)));
+}
+function triangleArea(a: number, b: number, c: number) {
+  const s = (a + b + c) / 2;
+  return Math.sqrt(s * (s - a) * (s - b) * (s - c));
 }
 
-const QUESTIONS: Question[] = [
-  {
-    id: 1,
-    category: "Fundamentos",
-    question: "¿Qué es la triangulación en topografía?",
-    options: [
-      "Un método para medir alturas usando tres niveles",
-      "Una técnica que divide un terreno en triángulos para calcular su superficie a partir de coordenadas conocidas",
-      "El proceso de tomar tres fotografías aéreas de un terreno",
-      "Un sistema de coordenadas basado en tres ejes perpendiculares"
-    ],
-    correct: 1,
-    explanation: "La triangulación es una técnica topográfica que descompone un terreno en triángulos. Conociendo las coordenadas de los vértices, se pueden calcular áreas, ángulos y perímetros con gran precisión."
-  },
-  {
-    id: 2,
-    category: "Fórmulas",
-    question: "¿Qué fórmula se usa para calcular la distancia entre dos puntos A(x₁, y₁) y B(x₂, y₂)?",
-    options: [
-      "d = (x₂ - x₁) + (y₂ - y₁)",
-      "d = |x₂ - x₁| × |y₂ - y₁|",
-      "d = √((x₂ - x₁)² + (y₂ - y₁)²)",
-      "d = (x₂ + y₂) - (x₁ + y₁)"
-    ],
-    correct: 2,
-    explanation: "La distancia euclidiana entre dos puntos se calcula con el Teorema de Pitágoras: d = √((x₂ - x₁)² + (y₂ - y₁)²). Es la base para medir todos los lados de un triángulo en el plano cartesiano."
-  },
-  {
-    id: 3,
-    category: "Área",
-    question: "La Fórmula de Gauss (Shoelace) para el área de un triángulo con vértices A, B, C es:",
-    options: [
-      "A = base × altura / 2",
-      "A = ½ |x_A(y_B − y_C) + x_B(y_C − y_A) + x_C(y_A − y_B)|",
-      "A = √(s(s−a)(s−b)(s−c)) donde s es el semiperímetro",
-      "A = (a × b × sin C) / 2"
-    ],
-    correct: 1,
-    explanation: "La Fórmula de Gauss (o Shoelace) calcula el área directamente desde las coordenadas: A = ½|x_A(y_B−y_C) + x_B(y_C−y_A) + x_C(y_A−y_B)|. Es muy útil en topografía porque no requiere medir alturas físicamente."
-  },
-  {
-    id: 4,
-    category: "Ángulos",
-    question: "¿Qué teorema se usa para calcular los ángulos internos de un triángulo conociendo solo la longitud de sus tres lados?",
-    options: [
-      "Teorema de Tales",
-      "Teorema de Thales",
-      "Teorema del Coseno",
-      "Teorema del Seno"
-    ],
-    correct: 2,
-    explanation: "El Teorema del Coseno (cos A = (b² + c² − a²) / 2bc) permite calcular cualquier ángulo conociendo los tres lados. Es esencial en triangulación porque los lados se miden en campo y los ángulos se calculan después."
-  },
-  {
-    id: 5,
-    category: "Tipos de triángulo",
-    question: "Un triángulo donde los tres lados son iguales se llama:",
-    options: [
-      "Escaleno",
-      "Isósceles",
-      "Equilátero",
-      "Obtusángulo"
-    ],
-    correct: 2,
-    explanation: "Equilátero = tres lados iguales, tres ángulos de 60°. Isósceles = dos lados iguales. Escaleno = todos los lados distintos. La clasificación por ángulos (acutángulo, rectángulo, obtusángulo) es independiente de la clasificación por lados."
-  },
-  {
-    id: 6,
-    category: "Propiedades",
-    question: "¿Cuánto suman los ángulos internos de cualquier triángulo?",
-    options: [
-      "90°",
-      "180°",
-      "270°",
-      "360°"
-    ],
-    correct: 1,
-    explanation: "La suma de los ángulos internos de todo triángulo es exactamente 180°. Esta propiedad se usa como verificación en topografía: si la suma no da 180°, hay un error de medición."
-  },
-  {
-    id: 7,
-    category: "Centroide",
-    question: "¿Cómo se calcula el centroide (baricentro) de un triángulo con vértices A, B, C?",
-    options: [
-      "Es el punto más cercano al lado más largo",
-      "Se calcula como la media aritmética de las coordenadas: G = ((x_A+x_B+x_C)/3, (y_A+y_B+y_C)/3)",
-      "Es el punto equidistante de los tres lados",
-      "Se ubica a ¾ de la altura desde la base"
-    ],
-    correct: 1,
-    explanation: "El centroide o baricentro es el punto de intersección de las medianas. Sus coordenadas son simplemente el promedio de los vértices: G = ((x_A+x_B+x_C)/3, (y_A+y_B+y_C)/3). En topografía representa el 'centro de masa' del terreno."
-  },
-  {
-    id: 8,
-    category: "Circunradio e Inradio",
-    question: "El inradio (r) de un triángulo se calcula con:",
-    options: [
-      "r = (a × b × c) / (4 × A)",
-      "r = A / s, donde s es el semiperímetro y A el área",
-      "r = √(A / π)",
-      "r = (a + b + c) / (2 × A)"
-    ],
-    correct: 1,
-    explanation: "El inradio es el radio del círculo inscrito en el triángulo. Se calcula como r = A/s, donde A es el área y s = (a+b+c)/2 es el semiperímetro. El circunradio (R = abc/4A) es el radio del círculo circunscrito."
-  },
-  {
-    id: 9,
-    category: "Aplicaciones",
-    question: "Si tres puntos son colineales (están en línea recta), ¿qué ocurre con el área del triángulo que forman?",
-    options: [
-      "El área es igual al doble de la distancia entre los extremos",
-      "El área es igual a 1",
-      "El área es igual a 0, el triángulo es degenerado",
-      "El área es indefinida"
-    ],
-    correct: 2,
-    explanation: "Cuando los tres puntos son colineales, el 'triángulo' degenerado tiene área = 0. En topografía esto indica un error en la toma de puntos, ya que no se puede delimitar una superficie real con puntos alineados."
-  },
-  {
-    id: 10,
-    category: "Semiperímetro",
-    question: "El semiperímetro de un triángulo con lados a = 6 m, b = 8 m, c = 10 m es:",
-    options: [
-      "24 m",
-      "12 m",
-      "48 m",
-      "6 m"
-    ],
-    correct: 1,
-    explanation: "El semiperímetro s = (a + b + c) / 2 = (6 + 8 + 10) / 2 = 12 m. Este triángulo es rectángulo (6² + 8² = 10²), y con la fórmula de Herón: A = √(12×6×4×2) = √576 = 24 m²."
-  },
-  {
-    id: 11,
-    category: "Plano cartesiano",
-    question: "En un plano cartesiano, ¿qué representan los ejes X e Y en un levantamiento topográfico?",
-    options: [
-      "X representa la altitud y Y la profundidad del terreno",
-      "X representa la distancia horizontal (Este) y Y la distancia vertical (Norte)",
-      "X representa el tiempo de medición y Y la precisión del instrumento",
-      "X y Y representan los ángulos de inclinación del terreno"
-    ],
-    correct: 1,
-    explanation: "En topografía, el eje X equivale a la distancia hacia el Este (coordenada Este o Easting) y el eje Y a la distancia hacia el Norte (coordenada Norte o Northing). Las coordenadas cartesianas locales son la base de todo levantamiento."
-  },
-  {
-    id: 12,
-    category: "Herramientas",
-    question: "¿Qué instrumento de campo se usa tradicionalmente para medir ángulos horizontales en triangulación?",
-    options: [
-      "Nivel de burbuja",
-      "Teodolito o Estación Total",
-      "Cinta métrica",
-      "GPS diferencial"
-    ],
-    correct: 1,
-    explanation: "El teodolito (y su versión moderna, la Estación Total) mide ángulos horizontales y verticales con gran precisión. En triangulación clásica, se miden los ángulos desde puntos de control y se calculan las posiciones por trigonometría."
-  },
-];
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-type AnswerState = Record<number, number | null>;
+type ExerciseType = "SSS" | "SAS" | "AAS" | "ASA";
+type Difficulty = "facil" | "medio" | "dificil";
 
-export default function Quiz() {
-  const [answers, setAnswers] = useState<AnswerState>({});
-  const [submitted, setSubmitted] = useState(false);
-  const [currentQ, setCurrentQ] = useState(0);
-  const [showExplanation, setShowExplanation] = useState<Record<number, boolean>>({});
+interface FullTriangle {
+  A: number; B: number; C: number;   // angles in degrees
+  a: number; b: number; c: number;   // sides (a opp A, b opp B, c opp C)
+  area: number; perimeter: number;
+}
 
-  const answered = Object.values(answers).filter((v) => v !== null).length;
-  const correct = submitted
-    ? QUESTIONS.filter((q) => answers[q.id] === q.correct).length
-    : 0;
-  const score = submitted ? Math.round((correct / QUESTIONS.length) * 100) : 0;
+interface Field {
+  key: keyof FullTriangle;
+  label: string;
+  unit: string;
+  given: boolean;
+  value: number;
+}
 
-  const handleAnswer = (questionId: number, optionIndex: number) => {
-    if (submitted) return;
-    setAnswers((prev) => ({ ...prev, [questionId]: optionIndex }));
+interface Exercise {
+  type: ExerciseType;
+  triangle: FullTriangle;
+  fields: Field[];
+  title: string;
+  description: string;
+}
+
+// ─── Triangle generation ─────────────────────────────────────────────────────
+
+function randomBetween(min: number, max: number) {
+  return Math.random() * (max - min) + min;
+}
+
+function round2(n: number) { return Math.round(n * 100) / 100; }
+
+function buildTriangle(A: number, B: number, a: number): FullTriangle {
+  const C = 180 - A - B;
+  const b = round2(a * Math.sin(toRad(B)) / Math.sin(toRad(A)));
+  const c = round2(a * Math.sin(toRad(C)) / Math.sin(toRad(A)));
+  const area = round2(triangleArea(a, b, c));
+  return { A: round2(A), B: round2(B), C: round2(C), a, b, c, area, perimeter: round2(a + b + c) };
+}
+
+function generateTriangle(diff: Difficulty): FullTriangle {
+  const [minSide, maxSide, minAngle, maxAngle] =
+    diff === "facil"  ? [5, 15, 30, 90] :
+    diff === "medio"  ? [3, 25, 20, 120] :
+                        [2, 40, 10, 140];
+  let t: FullTriangle | null = null;
+  while (!t) {
+    const A = Math.round(randomBetween(minAngle, maxAngle));
+    const B = Math.round(randomBetween(minAngle, Math.min(maxAngle, 179 - A)));
+    if (A + B >= 175) continue;
+    const a = Math.round(randomBetween(minSide, maxSide));
+    t = buildTriangle(A, B, a);
+    if (t.b <= 0 || t.c <= 0 || t.area <= 0) t = null;
+  }
+  return t!;
+}
+
+// ─── Exercise builders ────────────────────────────────────────────────────────
+
+function makeSSS(tri: FullTriangle): Exercise {
+  return {
+    type: "SSS",
+    triangle: tri,
+    title: "Datos: tres lados (LLL)",
+    description: "Conocés los tres lados del triángulo. Calculá los tres ángulos internos y el área.",
+    fields: [
+      { key: "a", label: "Lado a", unit: "m", given: true, value: tri.a },
+      { key: "b", label: "Lado b", unit: "m", given: true, value: tri.b },
+      { key: "c", label: "Lado c", unit: "m", given: true, value: tri.c },
+      { key: "A", label: "Ángulo A", unit: "°", given: false, value: tri.A },
+      { key: "B", label: "Ángulo B", unit: "°", given: false, value: tri.B },
+      { key: "C", label: "Ángulo C", unit: "°", given: false, value: tri.C },
+      { key: "area", label: "Área", unit: "m²", given: false, value: tri.area },
+    ],
   };
+}
 
-  const handleSubmit = () => {
-    if (answered < QUESTIONS.length) return;
-    setSubmitted(true);
-    setCurrentQ(0);
+function makeSAS(tri: FullTriangle): Exercise {
+  return {
+    type: "SAS",
+    triangle: tri,
+    title: "Datos: dos lados y el ángulo entre ellos (LAL)",
+    description: "Conocés dos lados y el ángulo que forman. Calculá el tercer lado, los ángulos restantes y el área.",
+    fields: [
+      { key: "a", label: "Lado a", unit: "m", given: true, value: tri.a },
+      { key: "b", label: "Lado b", unit: "m", given: true, value: tri.b },
+      { key: "C", label: "Ángulo C (entre a y b)", unit: "°", given: true, value: tri.C },
+      { key: "c", label: "Lado c", unit: "m", given: false, value: tri.c },
+      { key: "A", label: "Ángulo A", unit: "°", given: false, value: tri.A },
+      { key: "B", label: "Ángulo B", unit: "°", given: false, value: tri.B },
+      { key: "area", label: "Área", unit: "m²", given: false, value: tri.area },
+    ],
   };
+}
 
-  const handleReset = () => {
-    setAnswers({});
-    setSubmitted(false);
-    setCurrentQ(0);
-    setShowExplanation({});
+function makeAAS(tri: FullTriangle): Exercise {
+  return {
+    type: "AAS",
+    triangle: tri,
+    title: "Datos: dos ángulos y un lado (ALA)",
+    description: "Conocés dos ángulos y el lado opuesto a uno de ellos. Calculá el tercer ángulo, los lados restantes y el área.",
+    fields: [
+      { key: "A", label: "Ángulo A", unit: "°", given: true, value: tri.A },
+      { key: "B", label: "Ángulo B", unit: "°", given: true, value: tri.B },
+      { key: "a", label: "Lado a (opuesto a A)", unit: "m", given: true, value: tri.a },
+      { key: "C", label: "Ángulo C", unit: "°", given: false, value: tri.C },
+      { key: "b", label: "Lado b", unit: "m", given: false, value: tri.b },
+      { key: "c", label: "Lado c", unit: "m", given: false, value: tri.c },
+      { key: "area", label: "Área", unit: "m²", given: false, value: tri.area },
+    ],
   };
+}
 
-  const toggleExplanation = (id: number) => {
-    setShowExplanation((prev) => ({ ...prev, [id]: !prev[id] }));
+function makeASA(tri: FullTriangle): Exercise {
+  return {
+    type: "ASA",
+    triangle: tri,
+    title: "Datos: dos ángulos y el lado entre ellos (ALA)",
+    description: "Conocés dos ángulos y el lado comprendido entre ellos. Calculá el tercer ángulo y los lados restantes.",
+    fields: [
+      { key: "A", label: "Ángulo A", unit: "°", given: true, value: tri.A },
+      { key: "c", label: "Lado c (entre A y B)", unit: "m", given: true, value: tri.c },
+      { key: "B", label: "Ángulo B", unit: "°", given: true, value: tri.B },
+      { key: "C", label: "Ángulo C", unit: "°", given: false, value: tri.C },
+      { key: "a", label: "Lado a", unit: "m", given: false, value: tri.a },
+      { key: "b", label: "Lado b", unit: "m", given: false, value: tri.b },
+      { key: "area", label: "Área", unit: "m²", given: false, value: tri.area },
+    ],
   };
+}
 
-  const q = QUESTIONS[currentQ];
-  const userAnswer = answers[q.id] ?? null;
-  const isCorrect = submitted && userAnswer === q.correct;
-  const isWrong = submitted && userAnswer !== null && userAnswer !== q.correct;
+const EXERCISE_TYPES: ExerciseType[] = ["SSS", "SAS", "AAS", "ASA"];
 
-  const categoryColors: Record<string, string> = {
-    "Fundamentos": "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-    "Fórmulas": "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
-    "Área": "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
-    "Ángulos": "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
-    "Tipos de triángulo": "bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300",
-    "Propiedades": "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
-    "Centroide": "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300",
-    "Circunradio e Inradio": "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
-    "Aplicaciones": "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-    "Semiperímetro": "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
-    "Plano cartesiano": "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-    "Herramientas": "bg-slate-100 text-slate-700 dark:bg-slate-900/40 dark:text-slate-300",
-  };
+function generateExercise(diff: Difficulty): Exercise {
+  const tri = generateTriangle(diff);
+  const type = EXERCISE_TYPES[Math.floor(Math.random() * EXERCISE_TYPES.length)];
+  switch (type) {
+    case "SSS": return makeSSS(tri);
+    case "SAS": return makeSAS(tri);
+    case "AAS": return makeAAS(tri);
+    case "ASA": return makeASA(tri);
+  }
+}
+
+// ─── Triangle SVG diagram ─────────────────────────────────────────────────────
+
+function TriangleDiagram({ exercise }: { exercise: Exercise }) {
+  const W = 320, H = 220, PAD = 44;
+  const tri = exercise.triangle;
+
+  // Place triangle: A at bottom-left, B at bottom-right, C at top
+  const ax = PAD, ay = H - PAD;
+  const bx = W - PAD, by = H - PAD;
+  // C position via law of cosines relative placement
+  const sinA = Math.sin(toRad(tri.A));
+  const cosA = Math.cos(toRad(tri.A));
+  const base = bx - ax;
+  const scale = base / tri.c;
+  const cx = ax + tri.b * scale * cosA;
+  const cy = ay - tri.b * scale * sinA;
+
+  const midAB = { x: (ax + bx) / 2, y: ay + 16 };
+  const midBC = { x: (bx + cx) / 2 + 12, y: (by + cy) / 2 };
+  const midCA = { x: (cx + ax) / 2 - 14, y: (cy + ay) / 2 };
+
+  const fieldMap = Object.fromEntries(exercise.fields.map(f => [f.key, f]));
+  const isGiven = (key: keyof FullTriangle) => fieldMap[key]?.given ?? false;
+
+  const givenStyle = "fill-primary stroke-primary";
+  const unknownStyle = "fill-muted-foreground stroke-muted-foreground";
+  const givenText = "fill-primary font-bold";
+  const unknownText = "fill-muted-foreground";
+
+  const arcRadius = 18;
+  function angleArc(vx: number, vy: number, p1x: number, p1y: number, p2x: number, p2y: number) {
+    const a1 = Math.atan2(p1y - vy, p1x - vx);
+    const a2 = Math.atan2(p2y - vy, p2x - vx);
+    const sx = vx + arcRadius * Math.cos(a1);
+    const sy = vy + arcRadius * Math.sin(a1);
+    const ex = vx + arcRadius * Math.cos(a2);
+    const ey = vy + arcRadius * Math.sin(a2);
+    let diff = a2 - a1;
+    while (diff > Math.PI) diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
+    const large = Math.abs(diff) > Math.PI ? 1 : 0;
+    const sweep = diff > 0 ? 1 : 0;
+    return `M ${sx} ${sy} A ${arcRadius} ${arcRadius} 0 ${large} ${sweep} ${ex} ${ey}`;
+  }
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-6 lg:p-8 max-w-4xl mx-auto flex flex-col gap-6">
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-xs mx-auto select-none">
+      {/* Triangle fill */}
+      <polygon
+        points={`${ax},${ay} ${bx},${by} ${cx},${cy}`}
+        className="fill-primary/10 stroke-primary stroke-2"
+      />
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b">
+      {/* Angle arcs */}
+      <path d={angleArc(ax, ay, bx, by, cx, cy)}
+        className={`fill-none stroke-2 ${isGiven("A") ? givenStyle : unknownStyle}`} strokeDasharray={isGiven("A") ? undefined : "4 2"} />
+      <path d={angleArc(bx, by, ax, ay, cx, cy)}
+        className={`fill-none stroke-2 ${isGiven("B") ? givenStyle : unknownStyle}`} strokeDasharray={isGiven("B") ? undefined : "4 2"} />
+      <path d={angleArc(cx, cy, ax, ay, bx, by)}
+        className={`fill-none stroke-2 ${isGiven("C") ? givenStyle : unknownStyle}`} strokeDasharray={isGiven("C") ? undefined : "4 2"} />
+
+      {/* Vertex labels */}
+      <text x={ax - 12} y={ay + 5} className="text-[13px] font-bold fill-foreground" textAnchor="middle">A</text>
+      <text x={bx + 12} y={by + 5} className="text-[13px] font-bold fill-foreground" textAnchor="middle">B</text>
+      <text x={cx} y={cy - 10} className="text-[13px] font-bold fill-foreground" textAnchor="middle">C</text>
+
+      {/* Side labels */}
+      <text x={midAB.x} y={midAB.y} textAnchor="middle"
+        className={`text-[11px] font-semibold ${isGiven("c") ? givenText : unknownText}`}>
+        c = {isGiven("c") ? `${tri.c} m` : "?"}
+      </text>
+      <text x={midBC.x} y={midBC.y} textAnchor="middle"
+        className={`text-[11px] font-semibold ${isGiven("a") ? givenText : unknownText}`}>
+        a = {isGiven("a") ? `${tri.a} m` : "?"}
+      </text>
+      <text x={midCA.x} y={midCA.y} textAnchor="middle"
+        className={`text-[11px] font-semibold ${isGiven("b") ? givenText : unknownText}`}>
+        b = {isGiven("b") ? `${tri.b} m` : "?"}
+      </text>
+
+      {/* Angle value labels */}
+      <text x={ax + 26} y={ay - 8} textAnchor="middle"
+        className={`text-[10px] ${isGiven("A") ? givenText : unknownText}`}>
+        {isGiven("A") ? `${tri.A}°` : "A=?"}
+      </text>
+      <text x={bx - 26} y={by - 8} textAnchor="middle"
+        className={`text-[10px] ${isGiven("B") ? givenText : unknownText}`}>
+        {isGiven("B") ? `${tri.B}°` : "B=?"}
+      </text>
+      <text x={cx + (cx > W / 2 ? 6 : -6)} y={cy + 22} textAnchor="middle"
+        className={`text-[10px] ${isGiven("C") ? givenText : unknownText}`}>
+        {isGiven("C") ? `${tri.C}°` : "C=?"}
+      </text>
+    </svg>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+type AnswerMap = Record<string, string>;
+type ResultMap = Record<string, boolean>;
+
+const DIFFICULTY_LABELS: Record<Difficulty, string> = {
+  facil: "Fácil",
+  medio: "Medio",
+  dificil: "Difícil",
+};
+
+const TOLERANCE = 0.015; // 1.5% relative tolerance
+
+function isClose(userVal: number, correct: number): boolean {
+  if (correct === 0) return Math.abs(userVal) < 0.05;
+  return Math.abs(userVal - correct) / Math.abs(correct) <= TOLERANCE;
+}
+
+export default function Quiz() {
+  const [difficulty, setDifficulty] = useState<Difficulty>("medio");
+  const [exercise, setExercise] = useState<Exercise>(() => generateExercise("medio"));
+  const [answers, setAnswers] = useState<AnswerMap>({});
+  const [results, setResults] = useState<ResultMap | null>(null);
+  const [showHint, setShowHint] = useState(false);
+  const [score, setScore] = useState({ correct: 0, total: 0 });
+  const firstInputRef = useRef<HTMLInputElement>(null);
+
+  const unknowns = exercise.fields.filter(f => !f.given);
+
+  const newExercise = useCallback((diff: Difficulty = difficulty) => {
+    setExercise(generateExercise(diff));
+    setAnswers({});
+    setResults(null);
+    setShowHint(false);
+    setTimeout(() => firstInputRef.current?.focus(), 100);
+  }, [difficulty]);
+
+  const handleDifficulty = (d: Difficulty) => {
+    setDifficulty(d);
+    newExercise(d);
+  };
+
+  const handleCheck = () => {
+    const res: ResultMap = {};
+    let allCorrect = true;
+    for (const f of unknowns) {
+      const raw = answers[f.key] ?? "";
+      const parsed = parseFloat(raw.replace(",", "."));
+      const ok = !isNaN(parsed) && isClose(parsed, f.value);
+      res[f.key] = ok;
+      if (!ok) allCorrect = false;
+    }
+    setResults(res);
+    const correct = Object.values(res).filter(Boolean).length;
+    const total = unknowns.length;
+    setScore(prev => ({
+      correct: prev.correct + correct,
+      total: prev.total + total,
+    }));
+  };
+
+  const allFilled = unknowns.every(f => (answers[f.key] ?? "").trim() !== "");
+
+  const typeColors: Record<ExerciseType, string> = {
+    SSS: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+    SAS: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+    AAS: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+    ASA: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+  };
+
+  const hintMap: Record<ExerciseType, string[]> = {
+    SSS: [
+      "Usá el Teorema del Coseno para encontrar cada ángulo:",
+      "cos(A) = (b² + c² − a²) / (2·b·c)",
+      "cos(B) = (a² + c² − b²) / (2·a·c)",
+      "C = 180° − A − B",
+      "Área = √(s·(s−a)·(s−b)·(s−c))  con  s = (a+b+c)/2",
+    ],
+    SAS: [
+      "Usá el Teorema del Coseno para el lado desconocido:",
+      "c = √(a² + b² − 2·a·b·cos C)",
+      "Luego aplicá el Teorema del Coseno para los ángulos:",
+      "cos(A) = (b² + c² − a²) / (2·b·c)",
+      "B = 180° − A − C",
+    ],
+    AAS: [
+      "C = 180° − A − B",
+      "Aplicá la Ley de Senos: a/sin A = b/sin B = c/sin C",
+      "b = a · sin(B) / sin(A)",
+      "c = a · sin(C) / sin(A)",
+      "Área = (a · b · sin C) / 2",
+    ],
+    ASA: [
+      "C = 180° − A − B",
+      "Aplicá la Ley de Senos: a/sin A = b/sin B = c/sin C",
+      "a = c · sin(A) / sin(C)",
+      "b = c · sin(B) / sin(C)",
+      "Área = (a · b · sin C) / 2",
+    ],
+  };
+
+  const scorePercent = score.total > 0 ? Math.round((score.correct / score.total) * 100) : null;
+
+  return (
+    <div className="min-h-screen bg-background p-4 md:p-6 max-w-4xl mx-auto flex flex-col gap-5">
+
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b">
         <div>
-          <h2 className="text-xl font-bold text-foreground">Preguntas de Práctica</h2>
-          <p className="text-muted-foreground text-sm mt-0.5">Triangulación y geometría topográfica — {QUESTIONS.length} preguntas</p>
+          <h2 className="text-xl font-bold text-foreground">Ejercicios de Triángulos</h2>
+          <p className="text-muted-foreground text-sm mt-0.5">Calculá los valores desconocidos a partir de los datos dados.</p>
         </div>
-        <div className="flex items-center gap-3">
-          {submitted && (
-            <div className="flex items-center gap-2 text-sm font-semibold">
+        <div className="flex items-center gap-2 flex-wrap">
+          {scorePercent !== null && (
+            <div className="flex items-center gap-1.5 text-sm font-semibold mr-1">
               <Trophy className="w-4 h-4 text-yellow-500" />
-              <span className={score >= 70 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
-                {correct}/{QUESTIONS.length} correctas ({score}%)
-              </span>
+              <span className="text-muted-foreground">{score.correct}/{score.total}</span>
+              <span className={scorePercent >= 70 ? "text-green-600 dark:text-green-400" : "text-orange-500"}>({scorePercent}%)</span>
             </div>
           )}
-          {submitted && (
-            <Button variant="outline" size="sm" onClick={handleReset} data-testid="button-reset-quiz">
-              <RotateCcw className="w-4 h-4 mr-1.5" /> Reiniciar
-            </Button>
-          )}
+          {(["facil", "medio", "dificil"] as Difficulty[]).map(d => (
+            <button
+              key={d}
+              onClick={() => handleDifficulty(d)}
+              data-testid={`button-difficulty-${d}`}
+              className={[
+                "px-3 py-1 rounded-full text-xs font-semibold border transition-all",
+                difficulty === d
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background text-muted-foreground border-border hover:border-primary/50",
+              ].join(" ")}
+            >
+              {DIFFICULTY_LABELS[d]}
+            </button>
+          ))}
         </div>
       </div>
 
-      {submitted && (
-        <Card className={`border-2 ${score >= 70 ? "border-green-400 bg-green-50 dark:bg-green-950/30" : "border-orange-400 bg-orange-50 dark:bg-orange-950/30"}`}>
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className={`text-5xl font-bold tabular-nums ${score >= 70 ? "text-green-600 dark:text-green-400" : "text-orange-600 dark:text-orange-400"}`}>
-              {score}%
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-5">
+
+        {/* Left: diagram + given data */}
+        <Card className="md:col-span-2">
+          <CardHeader className="pb-2 border-b">
+            <div className="flex items-center justify-between">
+              <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeColors[exercise.type]}`}>
+                {exercise.type}
+              </span>
+              <span className="text-xs text-muted-foreground">{DIFFICULTY_LABELS[difficulty]}</span>
             </div>
-            <div>
-              <p className="font-semibold text-foreground text-lg">
-                {score === 100 ? "¡Perfecto! Dominás el tema." : score >= 70 ? "¡Buen trabajo! Seguí practicando." : "Repasá el material e intentá de nuevo."}
-              </p>
-              <p className="text-muted-foreground text-sm">{correct} correctas de {QUESTIONS.length} preguntas</p>
+            <CardTitle className="text-sm font-semibold mt-2 leading-snug">{exercise.title}</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4 flex flex-col gap-4">
+            <TriangleDiagram exercise={exercise} />
+
+            <div className="border-t pt-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Datos conocidos</p>
+              <div className="flex flex-col gap-1.5">
+                {exercise.fields.filter(f => f.given).map(f => (
+                  <div key={f.key} className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">{f.label}</span>
+                    <span className="font-mono font-semibold text-primary">{f.value} {f.unit}</span>
+                  </div>
+                ))}
+              </div>
             </div>
+
+            <p className="text-xs text-muted-foreground leading-relaxed">{exercise.description}</p>
           </CardContent>
         </Card>
-      )}
 
-      <div className="flex gap-2 flex-wrap">
-        {QUESTIONS.map((question, i) => {
-          const ua = answers[question.id] ?? null;
-          let dotClass = "w-8 h-8 rounded-full border-2 text-xs font-bold transition-all cursor-pointer flex items-center justify-center ";
-          if (submitted) {
-            dotClass += ua === question.correct
-              ? "border-green-500 bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
-              : "border-red-500 bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300";
-          } else if (i === currentQ) {
-            dotClass += "border-primary bg-primary text-primary-foreground";
-          } else if (ua !== null) {
-            dotClass += "border-primary/60 bg-primary/10 text-primary";
-          } else {
-            dotClass += "border-border bg-background text-muted-foreground hover:border-primary/50";
-          }
-          return (
-            <button
-              key={question.id}
-              className={dotClass}
-              onClick={() => setCurrentQ(i)}
-              data-testid={`button-question-nav-${i}`}
-            >
-              {i + 1}
-            </button>
-          );
-        })}
-      </div>
+        {/* Right: answer inputs */}
+        <Card className="md:col-span-3">
+          <CardHeader className="pb-3 border-b">
+            <CardTitle className="text-sm font-semibold">Completá los valores desconocidos</CardTitle>
+            <p className="text-xs text-muted-foreground">Ingresá tus respuestas con hasta 2 decimales. Tolerancia: ±1.5%</p>
+          </CardHeader>
+          <CardContent className="pt-4 flex flex-col gap-4">
 
-      <Card className="flex-1">
-        <CardHeader className="pb-3 border-b">
-          <div className="flex items-center justify-between">
-            <span className={`text-xs font-semibold px-2 py-1 rounded-full ${categoryColors[q.category] ?? "bg-muted text-muted-foreground"}`}>
-              {q.category}
-            </span>
-            <span className="text-sm text-muted-foreground font-mono">{currentQ + 1} / {QUESTIONS.length}</span>
-          </div>
-          <CardTitle className="text-base font-semibold leading-snug mt-3" data-testid={`text-question-${q.id}`}>
-            {q.question}
-          </CardTitle>
-        </CardHeader>
+            <div className="flex flex-col gap-3">
+              {unknowns.map((f, i) => {
+                const res = results?.[f.key] ?? null;
+                return (
+                  <div key={f.key} className="flex flex-col gap-1">
+                    <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-xs flex items-center justify-center font-bold">{i + 1}</span>
+                      {f.label} <span className="text-muted-foreground font-normal">({f.unit})</span>
+                      {res === true && <CheckCircle2 className="w-4 h-4 text-green-500 ml-auto" />}
+                      {res === false && <XCircle className="w-4 h-4 text-red-500 ml-auto" />}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        ref={i === 0 ? firstInputRef : undefined}
+                        type="number"
+                        step="0.01"
+                        placeholder={`Calculá ${f.label}...`}
+                        value={answers[f.key] ?? ""}
+                        onChange={e => setAnswers(prev => ({ ...prev, [f.key]: e.target.value }))}
+                        disabled={results !== null}
+                        data-testid={`input-answer-${f.key}`}
+                        className={[
+                          "font-mono",
+                          res === true ? "border-green-500 bg-green-50 dark:bg-green-950/20" :
+                          res === false ? "border-red-500 bg-red-50 dark:bg-red-950/20" : "",
+                        ].join(" ")}
+                      />
+                      <span className="text-sm text-muted-foreground w-6 shrink-0">{f.unit}</span>
+                    </div>
+                    {res === false && results !== null && (
+                      <p className="text-xs text-red-600 dark:text-red-400 ml-7">
+                        Respuesta correcta: <span className="font-mono font-semibold">{f.value} {f.unit}</span>
+                      </p>
+                    )}
+                    {res === true && results !== null && (
+                      <p className="text-xs text-green-600 dark:text-green-400 ml-7">¡Correcto!</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
 
-        <CardContent className="pt-4 flex flex-col gap-3">
-          {q.options.map((option, i) => {
-            let optClass = "w-full text-left px-4 py-3 rounded-lg border text-sm transition-all ";
-            if (submitted) {
-              if (i === q.correct) {
-                optClass += "border-green-500 bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-300 font-medium";
-              } else if (i === userAnswer && i !== q.correct) {
-                optClass += "border-red-500 bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-300";
-              } else {
-                optClass += "border-border bg-background text-muted-foreground opacity-60";
-              }
-            } else if (userAnswer === i) {
-              optClass += "border-primary bg-primary/10 text-foreground font-medium";
-            } else {
-              optClass += "border-border bg-background text-foreground hover:border-primary/50 hover:bg-secondary/50 cursor-pointer";
-            }
-
-            return (
+            {/* Hint */}
+            <div className="border rounded-lg overflow-hidden">
               <button
-                key={i}
-                className={optClass}
-                onClick={() => handleAnswer(q.id, i)}
-                disabled={submitted}
-                data-testid={`button-option-${q.id}-${i}`}
+                className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-muted-foreground hover:bg-secondary/50 transition-colors"
+                onClick={() => setShowHint(h => !h)}
+                data-testid="button-toggle-hint"
               >
-                <span className="flex items-center gap-3">
-                  <span className="font-mono font-bold text-muted-foreground w-5 shrink-0">
-                    {String.fromCharCode(65 + i)}.
-                  </span>
-                  <span>{option}</span>
-                  {submitted && i === q.correct && (
-                    <CheckCircle className="w-4 h-4 ml-auto shrink-0 text-green-600" />
-                  )}
-                  {submitted && i === userAnswer && i !== q.correct && (
-                    <XCircle className="w-4 h-4 ml-auto shrink-0 text-red-600" />
-                  )}
-                </span>
+                <Lightbulb className="w-4 h-4 text-yellow-500" />
+                {showHint ? "Ocultar pista" : "Ver pista de resolución"}
               </button>
-            );
-          })}
-
-          {submitted && (
-            <div className="mt-2">
-              <button
-                className="flex items-center gap-2 text-sm text-primary hover:underline"
-                onClick={() => toggleExplanation(q.id)}
-                data-testid={`button-explanation-${q.id}`}
-              >
-                <BookOpen className="w-4 h-4" />
-                {showExplanation[q.id] ? "Ocultar explicación" : "Ver explicación"}
-              </button>
-              {showExplanation[q.id] && (
-                <div className="mt-2 p-3 rounded-lg bg-muted/50 border text-sm text-foreground leading-relaxed">
-                  {q.explanation}
+              {showHint && (
+                <div className="px-3 pb-3 pt-0 bg-yellow-50 dark:bg-yellow-950/20 border-t text-xs leading-relaxed text-foreground font-mono">
+                  {hintMap[exercise.type].map((line, i) => (
+                    <p key={i} className={i === 0 ? "font-sans font-semibold text-yellow-700 dark:text-yellow-400 mb-1 mt-1" : "mb-0.5"}>{line}</p>
+                  ))}
                 </div>
               )}
             </div>
-          )}
 
-          <div className="flex justify-between items-center mt-4 pt-4 border-t">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentQ((p) => Math.max(0, p - 1))}
-              disabled={currentQ === 0}
-              data-testid="button-prev-question"
-            >
-              Anterior
-            </Button>
+            {/* Action buttons */}
+            <div className="flex gap-3 mt-auto pt-2">
+              {results === null ? (
+                <Button
+                  className="flex-1"
+                  onClick={handleCheck}
+                  disabled={!allFilled}
+                  data-testid="button-check-answers"
+                >
+                  Verificar respuestas
+                </Button>
+              ) : (
+                <Button
+                  className="flex-1"
+                  onClick={() => newExercise()}
+                  data-testid="button-next-exercise"
+                >
+                  <ChevronRight className="w-4 h-4 mr-1.5" /> Siguiente ejercicio
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                onClick={() => newExercise()}
+                data-testid="button-skip-exercise"
+                title="Generar nuevo ejercicio"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+            </div>
 
-            {currentQ < QUESTIONS.length - 1 ? (
-              <Button
-                size="sm"
-                onClick={() => setCurrentQ((p) => p + 1)}
-                data-testid="button-next-question"
-              >
-                Siguiente <ChevronRight className="w-4 h-4 ml-1" />
-              </Button>
-            ) : !submitted ? (
-              <Button
-                size="sm"
-                onClick={handleSubmit}
-                disabled={answered < QUESTIONS.length}
-                data-testid="button-submit-quiz"
-                className="bg-primary"
-              >
-                Finalizar ({answered}/{QUESTIONS.length})
-              </Button>
-            ) : (
-              <Button size="sm" variant="outline" onClick={handleReset} data-testid="button-retry-quiz">
-                <RotateCcw className="w-4 h-4 mr-1.5" /> Intentar de nuevo
-              </Button>
+            {results !== null && (
+              <div className={[
+                "rounded-lg p-3 text-sm font-semibold text-center",
+                Object.values(results).every(Boolean)
+                  ? "bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400"
+                  : "bg-orange-100 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400"
+              ].join(" ")}>
+                {Object.values(results).every(Boolean)
+                  ? "¡Excelente! Todas las respuestas son correctas."
+                  : `${Object.values(results).filter(Boolean).length} de ${unknowns.length} correctas. Revisá los marcados en rojo.`}
+              </div>
             )}
-          </div>
-        </CardContent>
-      </Card>
 
+          </CardContent>
+        </Card>
+
+      </div>
     </div>
   );
 }
