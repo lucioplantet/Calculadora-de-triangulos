@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Calculadora de Coordenadas y Husos Horarios"
+version = "1.0.0"
+id = "artifacts/geo-calculator"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18724
+
+[services.development]
+run = "pnpm --filter @workspace/geo-calculator run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/geo-calculator", "run", "build" ]
+publicDir = "artifacts/geo-calculator/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18724"
+BASE_PATH = "/"
