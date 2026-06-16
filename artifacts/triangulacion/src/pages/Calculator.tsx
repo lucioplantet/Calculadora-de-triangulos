@@ -1,12 +1,12 @@
-import React, { useState, useMemo } from "react";
-import TriangleCanvas from "@/components/TriangleCanvas";
+import React, { useState, useMemo, useRef } from "react";
+import TriangleCanvas, { TriangleCanvasHandle } from "@/components/TriangleCanvas";
 import { Point, calculateMetrics } from "@/lib/geometry";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { AlertCircle, RotateCcw, Copy, Info } from "lucide-react";
+import { AlertCircle, RotateCcw, Copy, Info, ImageDown } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -18,6 +18,7 @@ export default function Calculator() {
   const [unit, setUnit] = useState<"m" | "ft">("m");
   const [formulasOpen, setFormulasOpen] = useState(false);
 
+  const canvasRef = useRef<TriangleCanvasHandle>(null);
   const { toast } = useToast();
 
   const metrics = useMemo(() => calculateMetrics(pointA, pointB, pointC), [pointA, pointB, pointC]);
@@ -26,6 +27,15 @@ export default function Calculator() {
     setPointA({ x: 0, y: 0 });
     setPointB({ x: 6, y: 0 });
     setPointC({ x: 3, y: 5 });
+  };
+
+  const handleExportImage = () => {
+    if (!metrics.isValid) {
+      toast({ title: "No se puede exportar", description: "El triángulo es inválido." });
+      return;
+    }
+    canvasRef.current?.exportPNG("triangulo.png");
+    toast({ title: "Imagen descargada", description: "Se guardó la figura como PNG." });
   };
 
   const handleExport = () => {
@@ -140,6 +150,7 @@ Inradio: ${metrics.inradius.toFixed(4)} ${unit}
 
           <div className="flex-1 min-h-[400px]">
             <TriangleCanvas 
+              ref={canvasRef}
               pointA={pointA} pointB={pointB} pointC={pointC}
               onChangeA={setPointA} onChangeB={setPointB} onChangeC={setPointC}
               metrics={metrics}
@@ -197,9 +208,12 @@ Inradio: ${metrics.inradius.toFixed(4)} ${unit}
                 </div>
               </div>
 
-              <div className="pt-2 mt-auto">
-                <Button className="w-full" onClick={handleExport} disabled={!metrics.isValid}>
-                  <Copy className="w-4 h-4 mr-2" /> Exportar datos
+              <div className="pt-2 mt-auto flex flex-col gap-2">
+                <Button className="w-full" onClick={handleExportImage} disabled={!metrics.isValid}>
+                  <ImageDown className="w-4 h-4 mr-2" /> Descargar imagen (PNG)
+                </Button>
+                <Button variant="outline" className="w-full" onClick={handleExport} disabled={!metrics.isValid}>
+                  <Copy className="w-4 h-4 mr-2" /> Copiar datos
                 </Button>
               </div>
 
